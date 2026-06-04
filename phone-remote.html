@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>OS TV — Tastiera Remota</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0e1a; color:#f0f0f0; font-family:Arial,sans-serif; padding:16px; min-height:100vh; }
+h1 { font-size:22px; font-weight:600; margin-bottom:8px; color:#3d7cf5; }
+#status { font-size:14px; color:#8899aa; margin-bottom:16px; min-height:20px; }
+#status.ok  { color:#4caf50; }
+#status.err { color:#e53935; }
+textarea {
+  width:100%; height:80px; background:#141928; color:#f0f0f0;
+  border:2px solid #3d7cf5; border-radius:8px; padding:12px;
+  font-size:18px; resize:none; margin-bottom:12px;
+}
+.row { display:flex; gap:8px; margin-bottom:8px; }
+button {
+  flex:1; padding:14px 8px; background:#1e2a45; color:#f0f0f0;
+  border:2px solid transparent; border-radius:8px; font-size:16px;
+  cursor:pointer; transition:background 0.12s;
+}
+button:active { background:#3d7cf5; }
+button:disabled { opacity:0.4; cursor:default; }
+.btn-send   { background:#3d7cf5; font-weight:700; font-size:18px; }
+.btn-danger { background:#c62828; }
+.sep { height:1px; background:rgba(255,255,255,0.1); margin:12px 0; }
+.nav-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+.nav-center { font-size:22px; }
+
+/* Microfono */
+.btn-mic {
+  width:100%; padding:20px 8px; font-size:22px; font-weight:700;
+  background:#1a2a1a; border:2px solid #4caf50; color:#4caf50;
+  border-radius:12px; cursor:pointer; transition:all 0.15s;
+  display:flex; align-items:center; justify-content:center; gap:10px;
+}
+.btn-mic.listening {
+  background:#4caf50; color:#fff; border-color:#4caf50;
+  animation: pulse 0.9s ease-in-out infinite;
+}
+.btn-mic:disabled { opacity:0.35; cursor:default; animation:none; }
+@keyframes pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(76,175,80,0.5); }
+  50%      { box-shadow: 0 0 0 12px rgba(76,175,80,0); }
+}
+#mic-transcript {
+  font-size:14px; color:#8899aa; margin-top:8px; min-height:20px;
+  text-align:center; font-style:italic;
+}
+#mic-hint {
+  font-size:12px; color:#556; margin-top:6px; text-align:center; line-height:1.5;
+}
+</style>
+</head>
+<body>
+<h1>&#128241; OS TV Remote</h1>
+<div id="status">Connessione in corso...</div>
+
+<!-- TESTO -->
+<textarea id="txt" placeholder="Scrivi qui e premi Invia..."></textarea>
+<div class="row">
+  <button class="btn-send" onclick="sendText()">&#9654; Invia</button>
+  <button onclick="sendKey('Backspace')">&#9003; Canc</button>
+  <button onclick="sendKey('Enter')">&#9166; Enter</button>
+</div>
+
+<div class="sep"></div>
+
+<!-- D-PAD -->
+<p style="font-size:13px;color:#8899aa;margin-bottom:10px;">Navigazione:</p>
+<div class="nav-row">
+  <div></div>
+  <button onclick="sendKey('ArrowUp')">&#9650;</button>
+  <div></div>
+  <button onclick="sendKey('ArrowLeft')">&#9664;</button>
+  <button class="nav-center" onclick="sendKey('Enter')">OK</button>
+  <button onclick="sendKey('ArrowRight')">&#9654;</button>
+  <div></div>
+  <button onclick="sendKey('ArrowDown')">&#9660;</button>
+  <div></div>
+</div>
+
+<div class="sep"></div>
+<button class="btn-danger" onclick="sendKey('Back')">&#8592; Indietro</button>
+
+<div class="sep"></div>
+
+<!-- CONTROLLO VOCALE -->
+<button class="btn-mic" id="mic-btn" onclick="toggleVoice()">
+  <span id="mic-icon">&#127908;</span>
+  <span id="mic-label">Comando vocale</span>
+</button>
+<div id="mic-transcript"></div>
+<div id="mic-hint">
+  Es: "Apri YouTube" &bull; "Su / Giù / OK" &bull; "Play / Pausa" &bull; "Home"
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+// ── PeerJS connection ────────────────────────────────────
+var peerId   = new URLSearchParams(location.search).get('peer');
+var statusEl = document.getElementById('status');
+var conn     = null;
+
+if (!peerId) {
+  statusEl.textContent = 'Errore: ID TV mancante nell\'URL.';
+  statusEl.className = 'err';
+} else {
+  statusEl.textContent = 'Connessione a TV (' + peerId + ')...';
+  var peer = new Peer();
+  peer.on('open', function() {
+    conn = peer.connect(peerId);
+    conn.on('open', function() {
+      statusEl.textContent = '✓ Connesso al TV!';
+      statusEl.className = 'ok';
+    });
+    conn.on('error', function(e) {
+      statusEl.textContent = 'Errore: ' + e;
+      statusEl.className = 'err';
+    });
+    conn.on('close', function() {
+      statusEl.textContent = 'Disconnesso.';
+      statusEl.className = 'err';
+    });
+  });
+  peer.on('error', function(e) {
+    statusEl.textContent = 'Errore PeerJS: ' + e.type;
+    statusEl.className = 'err';
+  });
+}
+
+function send(data) {
+  if (conn && conn.open) conn.send(data);
+  else { statusEl.textContent = 'Non connesso al TV.'; statusEl.className = 'err'; }
+}
+function sendText() {
+  var txt = document.getElementById('txt').value;
+  if (txt) { send({ type:'text', value:txt }); document.getElementById('txt').value = ''; }
+}
+function sendKey(k) { send({ type:'key', value:k }); }
+
+document.getElementById('txt').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
+});
+
+// ── Web Speech API ────────────────────────────────────────
+var recognition  = null;
+var isListening  = false;
+var micBtn       = document.getElementById('mic-btn');
+var micIcon      = document.getElementById('mic-icon');
+var micLabel     = document.getElementById('mic-label');
+var micTranscript = document.getElementById('mic-transcript');
+
+var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.lang             = 'it-IT';
+  recognition.continuous       = false;
+  recognition.interimResults   = true;  // mostra testo parziale in tempo reale
+  recognition.maxAlternatives  = 1;
+
+  recognition.onstart = function() {
+    isListening = true;
+    micBtn.classList.add('listening');
+    micLabel.textContent = 'Ascolto...';
+    micIcon.textContent  = '🔴';  // cerchio rosso = in registrazione
+    micTranscript.textContent = '';
+  };
+
+  recognition.onresult = function(e) {
+    var interim  = '';
+    var final    = '';
+    for (var i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final   += e.results[i][0].transcript;
+      else                       interim += e.results[i][0].transcript;
+    }
+    // Mostra testo parziale mentre parla
+    micTranscript.textContent = interim || final;
+
+    if (final) {
+      var transcript = final.toLowerCase().trim();
+      micTranscript.textContent = '"' + transcript + '"';
+      send({ type: 'voice', value: transcript });
+    }
+  };
+
+  recognition.onerror = function(e) {
+    var msgs = {
+      'no-speech':    'Nessuna voce rilevata.',
+      'not-allowed':  'Permesso microfono negato.',
+      'network':      'Errore di rete.',
+      'aborted':      ''
+    };
+    micTranscript.textContent = msgs[e.error] || 'Errore: ' + e.error;
+    stopListening();
+  };
+
+  recognition.onend = function() {
+    stopListening();
+  };
+
+} else {
+  // Browser non supporta Web Speech API
+  micBtn.disabled = true;
+  micLabel.textContent = 'Voce non supportata su questo browser';
+  document.getElementById('mic-hint').textContent =
+    'Usa Chrome su Android per il controllo vocale.';
+}
+
+function startListening() {
+  if (!recognition) return;
+  if (!conn || !conn.open) {
+    micTranscript.textContent = 'Connetti prima al TV.';
+    return;
+  }
+  try { recognition.start(); } catch(e) {}
+}
+
+function stopListening() {
+  isListening = false;
+  micBtn.classList.remove('listening');
+  micLabel.textContent = 'Comando vocale';
+  micIcon.textContent  = '🎤';
+  try { recognition.stop(); } catch(e) {}
+}
+
+function toggleVoice() {
+  if (isListening) stopListening();
+  else             startListening();
+}
+</script>
+</body>
+</html>
