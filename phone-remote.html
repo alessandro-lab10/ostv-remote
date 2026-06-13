@@ -110,22 +110,31 @@ if (!peerId) {
   statusEl.className = 'err';
 } else {
   statusEl.textContent = 'Connessione a TV (' + peerId + ')...';
-  var peer = new Peer();
-  peer.on('open', function() {
-    conn = peer.connect(peerId);
+  var PeerCtor = (typeof Peer !== 'undefined' && Peer) || window.Peer ||
+                 (window.peerjs && (window.peerjs.Peer || window.peerjs.default));
+  var peer = new PeerCtor();
+
+  function connectTV() {
+    statusEl.textContent = 'Connessione a TV...';
+    statusEl.className = '';
+    conn = peer.connect(peerId, { reliable: true });
     conn.on('open', function() {
       statusEl.textContent = '✓ Connesso al TV!';
       statusEl.className = 'ok';
     });
-    conn.on('error', function(e) {
-      statusEl.textContent = 'Errore: ' + e;
-      statusEl.className = 'err';
-    });
     conn.on('close', function() {
-      statusEl.textContent = 'Disconnesso.';
-      statusEl.className = 'err';
+      statusEl.textContent = 'Riconnessione...';
+      statusEl.className = '';
+      setTimeout(connectTV, 1500);
     });
-  });
+    conn.on('error', function() {
+      setTimeout(connectTV, 1500);
+    });
+  }
+
+  peer.on('open', connectTV);
+  // Se il broker cade, riconnetti (lo schermo del telefono che si spegne lo causa spesso)
+  peer.on('disconnected', function() { try { peer.reconnect(); } catch(e) {} });
   peer.on('error', function(e) {
     statusEl.textContent = 'Errore PeerJS: ' + e.type;
     statusEl.className = 'err';
